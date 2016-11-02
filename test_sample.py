@@ -1,33 +1,10 @@
 #! /usr/bin/env python
 # -*- coding:utf-8 -*-
 import requests
-import codecs
-import re
 import json
-
-
-def request_template(method, url, **kwargs):
-    # print kwargs
-    try:
-        if method.lower() == "get":
-            r_get = requests.get(url=url, **kwargs)
-            if r_get.status_code < 400:
-                if r_get.headers:
-                    if "application/json" in r_get.headers["Content-Type"]:
-                        if json.loads(r_get.text)["success"] is True:
-                            print "ok"
-            print r_get.url
-            print r_get.status_code
-            assert r_get.status_code < 400
-        if method.lower() == "post":
-            r_post = requests.post(url=url, **kwargs)
-            print r_post.url
-            print r_post.text
-            print r_post.status_code
-            assert r_post.status_code < 400
-    except Exception as e:
-        print(e)
-        return False
+import time
+import utils
+import urlparse
 
 
 def filter_by_host(req):  # 过滤出请求头中host字段包含mmbang的请求
@@ -62,7 +39,94 @@ def filter_by_duration(req):  # 过滤出有返回的请求
         return False
 
 
-def dealwithdata(record):
+def request_template(method, url, headers, **kwargs):
+    # print kwargs
+    try:
+        parsed_url = urlparse.urlparse(url)
+        protocol = parsed_url.scheme
+        host = parsed_url.netloc
+        path = parsed_url.path
+        params = parsed_url.params
+        query = parsed_url.query
+        reqBody = kwargs["data"]
+        # request
+        if method.lower() == "get":
+            res = requests.get(url=url, headers=headers, **kwargs)
+        if method.lower() == "post":
+            res = requests.post(url=url, headers=headers, **kwargs)
+
+        result = {
+            "url": res.url,
+            "protocol": protocol,
+            "host": host,
+            "path": path,
+            "params": params,
+            "query": query,
+            "method": method,
+            "reqHeader": res.request.headers,
+            "reqBody": reqBody,
+            "statusCode": res.status_code,
+            "duration": res.elapsed.microseconds,
+            "resHeader": res.headers,
+            "resBody": res.text,
+            "length": len(res.content),
+            "encoding": res.encoding,
+            # "raw": res.raw,
+            "reason": res.reason
+        }
+        return result
+        # # assert
+        # if res.status_code >= 400:
+        #     return utils.assertFail("response code is over 400")
+        # if res.headers and ("json" in res.headers["Content-Type"]):
+        #     if json.loads(res.text)["success"] is not True:
+        #         return utils.assertFail("response json fail")
+    except Exception as e:
+        print(e)
+        return False
+
+
+def do_request(l):
+    try:
+        for x in xrange(0, len(l)):
+            record = json.loads(l[x])
+
+            # 请求之前写入原始数据并返回数据id
+            id = utils.insertOne_db({
+                "Iter": 1,
+                "origin": record,
+                "created": time.time()
+            })
+
+            # 开始请求
+            response = request_template(
+                record["method"],
+                record["url"],
+                record["reqHeader"],
+                data=record["reqBody"],
+                verify=False,
+                timeout=30
+            )
+            # 请求之后根据之前的数据id写入请求的数据
+            utils.updateOne_db(
+                {"_id": id},
+                {"$set": {"requests": response, "updated": time.time()}}
+            )
+            # 断言 并写入数据库
+            utils.updateOne_db(
+                {"_id": id},
+                {"$set": utils.assertSuccess(
+                    utils.queryOne_db({"_id": id})["requests"]
+                )}
+            )
+            print("*" * 20)
+        return True
+    except Exception as e:
+        print(e)
+        return False
+
+
+def generateReport():
     pass
 
 
@@ -71,71 +135,5 @@ with open("demo1.log", "r") as file:
     line = filter(filter_by_host, line)
     line = filter(filter_by_method, line)
     line = filter(filter_by_duration, line)
-    # print len(line)
-    for x in xrange(0, len(line)):
-        record = json.loads(line[x])
-        result = request_template(
-            record["method"],
-            record["url"],
-            headers=record["reqHeader"],
-            data=record["reqBody"],
-            verify=False
-        )
-        print("*" * 20)
-
-
-def filter_null(c):
-    if not re.match('[\\x00\\xff\\xfe]', c):
-        return True
-
-
-def unicode2utf8(input_file, output_file):
-    with open(output_file, 'w') as save:
-        with open(input_file, 'rb') as f:
-            for line in open(input_file):
-                line = f.readline()
-                line = filter(filter_null, line)
-                line = line[:-1]  # 去掉多余的换行符
-                line = line.encode('utf-8')
-                # print line
-                save.writelines(line)
-    with open(output_file, 'r') as f_utf8:
-        print f_utf8.read()
-
-
-# unicode2utf8("3.txt", "6.txt")
-
-
-def read_file(file):
-    '''
-    adsddsa
-    '''
-    with codecs.open(file, 'r', 'utf-8') as file:
-        line = file.readlines()
-        if(line):
-            print line[3]
-
-
-
-
-
-# file_path = "demo1.log"
-# read_file(file_path)
-
-# for x in xrange(0, 3):
-#     method = "get"
-#     url = "http://www.baidu.com"
-#     request_template(method, url, params={"a": 1}, headers={}, files={})
-
-
-# def setup_func():
-#     "set up test fixtures"
-
-
-# def teardown_func():
-#     "tear down test fixtures"
-
-
-# @with_setup(setup_func, teardown_func)
-# def test():
-#     "test ..."
+    do_request(line)
+generateReport()
