@@ -97,6 +97,8 @@ def filter_by_duration(req):  # 过滤出有返回的请求
 
 
 def request_template(method, url, headers, **kwargs):
+    '''
+    '''
     # print kwargs
     try:
         parsed_url = urlparse.urlparse(url)
