@@ -5,13 +5,70 @@ import json
 import time
 import utils
 import urlparse
+import getopt
+import sys
+import config
+
+def main(argv):
+    try:
+        opts, args = getopt.getopt(
+            argv[1:],
+            "hvi:t:",
+            ["help", "version", "inputfile=", "host="]
+        )
+    except getopt.GetoptError:
+        Usage()
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            Usage()
+            sys.exit(0)
+        elif opt in ("-v", "--version"):
+            Version()
+            sys.exit(0)
+        elif opt in ("-i", "--inputfile"):
+            inputfile = arg
+        elif opt in ("-t", "--host"):
+            global filter_host
+            filter_host = arg
+        else:
+            Usage()
+            sys.exit(3)
+    if 'inputfile' not in locals().keys():
+        Usage()
+        sys.exit(4)
+
+    with open(inputfile, "r") as file:
+        line = file.readlines()
+        line = filter(filter_by_host, line)
+        line = filter(filter_by_method, line)
+        line = filter(filter_by_duration, line)
+        do_request(line)
+        generateReport()
+
+
+def Usage():
+    print 'repeat.py usage:'
+    print '-h, --help: print help message.'
+    print '-v, --version: print script version'
+    print '-i, --inputfile: (required) inputfile file recorded by anyproxy.'
+    print '-t, --host: (optional) a list of host separated by | , which need to be repeat\
+    							if null, read config.py\
+                      ex: --host "mobile.mmbang.com|www.mmbang.com"'
+
+
+def Version():
+    print 'repeat.py 0.0.1'
 
 
 def filter_by_host(req):  # 过滤出请求头中host字段包含mmbang的请求
     try:
-        fliter_string = "mmbang"
+        if 'filter_host' in globals().keys(): # 判断是否传入全局变量filter_host
+            filter_host_list = filter_host.split("|") # 读取传入的filter_host转化为filter_host_list
+        else:
+            filter_host_list = config.filter_host_list # 读取config.py中的filter_host_list
         r = json.loads(req)
-        if fliter_string in r["reqHeader"]["host"]:
+        if r["reqHeader"]["host"] in filter_host_list:
             return req
     except Exception as e:
         print(e)
@@ -20,9 +77,9 @@ def filter_by_host(req):  # 过滤出请求头中host字段包含mmbang的请求
 
 def filter_by_method(req):  # 过滤出请求方法是get或者post的请求
     try:
-        fliter_tuple = ("get", "post")
+        filter_tuple = ("get", "post")
         r = json.loads(req)
-        if r["method"].lower() in fliter_tuple:
+        if r["method"].lower() in filter_tuple:
             return req
     except Exception as e:
         print(e)
@@ -130,10 +187,5 @@ def generateReport():
     pass
 
 
-with open("demo1.log", "r") as file:
-    line = file.readlines()
-    line = filter(filter_by_host, line)
-    line = filter(filter_by_method, line)
-    line = filter(filter_by_duration, line)
-    do_request(line)
-generateReport()
+if __name__ == '__main__':
+    main(sys.argv)
