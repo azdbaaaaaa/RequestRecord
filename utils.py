@@ -67,18 +67,26 @@ def assertSuccess(response):
     try:
         if isinstance(response, dict):
             status_code = response["statusCode"]
-            mime_type = response["resHeader"]["Content-Type"]
+            if response["resHeader"].has_key("Content-Type"):
+                mime_type = response["resHeader"]["Content-Type"]
+            else:
+                mime_type = "unknown"
             text = response["resBody"]
             assert_result = assert400(status_code)
             if assert_result["result"] is "Fail":
                 return assert_result
             if "application/json" in mime_type:
-                if json.loads(text)["success"] is True:
-                    return {"result": "Pass",
-                            "desc": "mime is json & success is true"}
+                if json.loads(text).has_key("success"):
+                    if json.loads(text)["success"] is True:
+                        return {"result": "Pass",
+                                "desc": "mime is json & success is true"}
+            return {
+                "result": "Pass",
+                "desc": "return code is lt 400 and mime isnt json"
+            }
         return {"result": "Fail",
-                "desc": "mime isnt json or success isnt true"}
+                "desc": response}
     except Exception as e:
         print(e)
-        return {"result": "Fail",
+        return {"result": "Exception",
                 "desc": "Exception:%s" % e}
