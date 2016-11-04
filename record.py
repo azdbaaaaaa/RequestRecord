@@ -218,10 +218,10 @@ def main(argv):
 
 
 if __name__ == '__main__':
-    #The start time 
+    # The start time
     start = time.clock()
-    #A program which will run for 3 seconds
+    # main program
     main(sys.argv)
-    #The End time 
+    # The End time
     end = time.clock()
     print("The function run time is : %.03f seconds" %(end-start))
