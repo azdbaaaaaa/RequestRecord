@@ -3,12 +3,25 @@
 import json
 
 
+def findMaxId():
+    try:
+        from pymongo import MongoClient
+        client = MongoClient()
+        db = client.data
+        cursor = db.records.find({}, {"Iter": 1, "_id": 0}).sort([("Iter", -1)]).limit(1)
+        for x in cursor:
+            return x["Iter"]
+    except Exception as e:
+        print(e)
+        return False
+
+
 def queryOne_db(query_data):
     try:
         from pymongo import MongoClient
         client = MongoClient()
-        db = client.anyproxy
-        result = db.record.find_one(query_data)
+        db = client.data
+        result = db.records.find_one(query_data)
         return result
     except Exception as e:
         print(e)
@@ -19,8 +32,8 @@ def queryMany_db(query_data):
     try:
         from pymongo import MongoClient
         client = MongoClient()
-        db = client.anyproxy
-        cursor = db.record.find(query_data)
+        db = client.data
+        cursor = db.records.find(query_data)
         result = []
         for x in cursor:
             result.append(x)
@@ -34,8 +47,8 @@ def insertOne_db(insert_data):
     try:
         from pymongo import MongoClient
         client = MongoClient()
-        db = client.anyproxy
-        result = db.record.insert_one(insert_data)
+        db = client.data
+        result = db.records.insert_one(insert_data)
         return result.inserted_id
     except Exception as e:
         print(e)
@@ -46,8 +59,8 @@ def updateOne_db(query_data, update_data):
     try:
         from pymongo import MongoClient
         client = MongoClient()
-        db = client.anyproxy
-        result = db.record.update_one(query_data, update_data)
+        db = client.data
+        result = db.records.update_one(query_data, update_data)
         if result.modified_count > 0:
             return True
         else:
@@ -67,7 +80,7 @@ def assertSuccess(response):
     try:
         if isinstance(response, dict):
             status_code = response["statusCode"]
-            if response["resHeader"].has_key("Content-Type"):
+            if "Content-Type" in response["resHeader"]:
                 mime_type = response["resHeader"]["Content-Type"]
             else:
                 mime_type = "unknown"
@@ -76,7 +89,7 @@ def assertSuccess(response):
             if assert_result["result"] is "Fail":
                 return assert_result
             if "application/json" in mime_type:
-                if json.loads(text).has_key("success"):
+                if "success" in json.loads(text):
                     if json.loads(text)["success"] is True:
                         return {"result": "Pass",
                                 "desc": "mime is json & success is true"}

@@ -9,23 +9,37 @@ import getopt
 import sys
 import config
 import threading
-from time import sleep
 
 
 def Usage():
     print 'repeat.py usage:'
     print '-h, --help: print help message.'
     print '-v, --version: print script version'
-    print '-i, --inputfile [value]: (required) inputfile file recorded by anyproxy.'
-    print '-t, --host [value]: (optional) a list of host separated by | , which need to be repeat. \
-if null, read config.py ex: --host "mobile.mmbang.com|www.mmbang.com"'
+    print '-i, --inputfile [value]: (required) inputfile recorded by anyproxy.'
+    print '-t, --host [value]: (optional) a list of host separated by | , \
+    which need to be repeat.if null, read config.py \
+    ex: --host "mobile.mmbang.com|www.mmbang.com"'
 
 
 def Version():
     print 'repeat.py 0.0.1'
 
 
-def filter_by_host_mmbang(req): # 过滤出请求头中host字段包含mmbang的请求
+def filter_by_static_file(req):  # 过滤出所有静态文件的请求
+    try:
+        filter_tuple = (".js", ".css", ".jpg", ".jpeg", ".png", ".gif")
+        r = json.loads(req)
+        for x in xrange(0, len(filter_tuple)):
+            if r["path"].endswith(filter_tuple[x]):
+                return False
+        # print r["path"]
+        return req
+    except Exception as e:
+        print(e)
+        return False
+
+
+def filter_by_host_mmbang(req):  # 过滤出请求头中host字段包含mmbang的请求
     try:
         r = json.loads(req)
         if "mmbang" in r["reqHeader"]["host"]:
@@ -37,10 +51,12 @@ def filter_by_host_mmbang(req): # 过滤出请求头中host字段包含mmbang的
 
 def filter_by_host(req):  # 过滤出指定域名的请求，如果没有指定的话读取config文件
     try:
-        if 'filter_host' in globals().keys(): # 判断是否传入全局变量filter_host
-            filter_host_list = filter_host.split("|") # 读取传入的filter_host转化为filter_host_list
+        if 'filter_host' in globals().keys():  # 判断是否传入全局变量filter_host
+            # 读取传入的filter_host转化为filter_host_list
+            filter_host_list = filter_host.split("|")
         else:
-            filter_host_list = config.filter_host_list # 读取config.py中的filter_host_list
+            # 读取config.py中的filter_host_list
+            filter_host_list = config.filter_host_list
         r = json.loads(req)
         if r["reqHeader"]["host"] in filter_host_list:
             return req
@@ -119,15 +135,15 @@ def request_template(method, url, headers, **kwargs):
         return "exception: %s" % e
 
 
-def do_request(request):
+def do_request(request, Iter, id):
     try:
         record = json.loads(request)
-
         # 请求之前写入原始数据并返回数据id
         id = utils.insertOne_db({
-            "Iter": 1,
+            "Iter": Iter,
             "origin": record,
-            "created": time.time()
+            "created": time.time(),
+            "id": id
         })
 
         # 开始请求
@@ -152,8 +168,7 @@ def do_request(request):
                 utils.queryOne_db({"_id": id})["requests"]
             )}
         )
-        sleep(5)
-        print("*" * 6 + "%s" + "*" * 6 + "%s" + "*" * 6) % (id,time.ctime())
+        print("*" * 6 + "%s" + "*" * 6 + "%s" + "*" * 6) % (id, time.ctime())
         return True
     except Exception as e:
         print(e)
@@ -195,14 +210,23 @@ def main(argv):
 
     with open(inputfile, "r") as file:
         lines = file.readlines()
+        # lines = lines[0]
         lines = filter(filter_by_host_mmbang, lines)
-        # line = filter(filter_by_host, line)
+        # lines = filter(filter_by_host, lines)
+        lines = filter(filter_by_static_file, lines)
         lines = filter(filter_by_method, lines)
         lines = filter(filter_by_duration, lines)
+
+        # 获取当前是第几次测试
+        currentIter = utils.findMaxId()
+        if not currentIter:
+            Iter = 1
+        else:
+            Iter = currentIter + 1
         # 多线程处理请求
         threads = []
         for x in xrange(0, len(lines)):
-            t = threading.Thread(target=do_request,args=(lines[x],))
+            t = threading.Thread(target=do_request, args=(lines[x], Iter, x + 1,))
             threads.append(t)
         for t in threads:
             t.setDaemon(True)
@@ -224,4 +248,4 @@ if __name__ == '__main__':
     main(sys.argv)
     # The End time
     end = time.clock()
-    print("The function run time is : %.03f seconds" %(end-start))
+    print("The function run time is : %.03f seconds" % (end - start))
