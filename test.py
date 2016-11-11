@@ -18,11 +18,19 @@ import utils
 # threads.append(t2)
 
 
-def main():
-    l = [1, 2, 3]
-    for x in xrange(1, len(l) + 1):
-        print x
+def count(collection_name, query_data):
+    try:
+        from pymongo import MongoClient
+        client = MongoClient()
+        db = client.data
+        print db.get_collection(collection_name)
+        print dir(db)
+        result = db.get_collection(dbname).find(query_data).count()
+        return result
+    except Exception as e:
+        print(e)
+        return False
 
 
 if __name__ == '__main__':
-    main()
+    print count("users", {})

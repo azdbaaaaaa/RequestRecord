@@ -3,12 +3,16 @@
 import json
 
 
-def findMaxId():
+def function():
+    pass
+
+
+def findMaxId(collection_name):
     try:
         from pymongo import MongoClient
         client = MongoClient()
         db = client.data
-        cursor = db.records.find({}, {"Iter": 1, "_id": 0}).sort([("Iter", -1)]).limit(1)
+        cursor = db.get_collection(collection_name).find({}, {"Iter": 1, "_id": 0}).sort([("Iter", -1)]).limit(1)
         for x in cursor:
             return x["Iter"]
     except Exception as e:
@@ -16,24 +20,24 @@ def findMaxId():
         return False
 
 
-def queryOne_db(query_data):
+def queryOne_db(collection_name, query_data):
     try:
         from pymongo import MongoClient
         client = MongoClient()
         db = client.data
-        result = db.records.find_one(query_data)
+        result = db.get_collection(collection_name).find_one(query_data)
         return result
     except Exception as e:
         print(e)
         return False
 
 
-def queryMany_db(query_data):
+def queryMany_db(collection_name, query_data):
     try:
         from pymongo import MongoClient
         client = MongoClient()
         db = client.data
-        cursor = db.records.find(query_data)
+        cursor = db.get_collection(collection_name).find(query_data)
         result = []
         for x in cursor:
             result.append(x)
@@ -43,24 +47,39 @@ def queryMany_db(query_data):
         return False
 
 
-def insertOne_db(insert_data):
+def count_db(collection_name, query_data):
     try:
         from pymongo import MongoClient
         client = MongoClient()
         db = client.data
-        result = db.records.insert_one(insert_data)
+        result = db.get_collection(collection_name).find(query_data).count()
+        # result = []
+        # for x in cursor:
+        #     result.append(x)
+        return result
+    except Exception as e:
+        print(e)
+        return False
+
+
+def insertOne_db(collection_name, insert_data):
+    try:
+        from pymongo import MongoClient
+        client = MongoClient()
+        db = client.data
+        result = db.get_collection(collection_name).insert_one(insert_data)
         return result.inserted_id
     except Exception as e:
         print(e)
         return False
 
 
-def updateOne_db(query_data, update_data):
+def updateOne_db(collection_name, query_data, update_data):
     try:
         from pymongo import MongoClient
         client = MongoClient()
         db = client.data
-        result = db.records.update_one(query_data, update_data)
+        result = db.get_collection(collection_name).update_one(query_data, update_data)
         if result.modified_count > 0:
             return True
         else:

@@ -25,6 +25,16 @@ def Version():
     print 'repeat.py 0.0.1'
 
 
+def filter_by_mime(req):  # 过滤出所有json格式的请求
+    try:
+        r = json.loads(req)
+        if "application/json" in r["mime"]:
+            return req
+    except Exception as e:
+        print(e)
+        return False
+
+
 def filter_by_static_file(req):  # 过滤出所有静态文件的请求
     try:
         filter_tuple = (".js", ".css", ".jpg", ".jpeg", ".png", ".gif")
@@ -139,7 +149,7 @@ def do_request(request, Iter, id):
     try:
         record = json.loads(request)
         # 请求之前写入原始数据并返回数据id
-        id = utils.insertOne_db({
+        id = utils.insertOne_db("apireplyrecords", {
             "Iter": Iter,
             "origin": record,
             "created": time.time(),
@@ -158,14 +168,16 @@ def do_request(request, Iter, id):
 
         # 请求之后根据之前的数据id写入请求的数据
         utils.updateOne_db(
+            "apireplyrecords",
             {"_id": id},
             {"$set": {"requests": response, "updated": time.time()}}
         )
         # 断言 并写入数据库
         utils.updateOne_db(
+            "apireplyrecords",
             {"_id": id},
             {"$set": utils.assertSuccess(
-                utils.queryOne_db({"_id": id})["requests"]
+                utils.queryOne_db("apireplyrecords", {"_id": id})["requests"]
             )}
         )
         print("*" * 6 + "%s" + "*" * 6 + "%s" + "*" * 6) % (id, time.ctime())
@@ -175,11 +187,11 @@ def do_request(request, Iter, id):
         return False
 
 
-def generateReport():
-    pass
-
-
 def main(argv):
+    # The start time
+    global start
+    start = time.time()
+
     try:
         opts, args = getopt.getopt(
             argv[1:],
@@ -211,14 +223,15 @@ def main(argv):
     with open(inputfile, "r") as file:
         lines = file.readlines()
         # lines = lines[0]
-        lines = filter(filter_by_host_mmbang, lines)
-        # lines = filter(filter_by_host, lines)
+        # lines = filter(filter_by_host_mmbang, lines)
+        lines = filter(filter_by_host, lines)
         lines = filter(filter_by_static_file, lines)
         lines = filter(filter_by_method, lines)
         lines = filter(filter_by_duration, lines)
+        lines = filter(filter_by_mime, lines)
 
         # 获取当前是第几次测试
-        currentIter = utils.findMaxId()
+        currentIter = utils.findMaxId("apireplysummarys")
         if not currentIter:
             Iter = 1
         else:
@@ -238,14 +251,29 @@ def main(argv):
         # for x in xrange(0, len(lines)):
         #     print lines[x]
         #     do_request(lines[x])
-    generateReport()
+    # The End time
+    global end
+    end = time.time()
+    utils.insertOne_db(
+        "apireplysummarys",
+        {
+            "Iter": Iter,
+            "start": start,
+            "end": end,
+            "totalCount": utils.count_db("apireplyrecords", {"Iter": Iter}),
+            "passCount": utils.count_db("apireplyrecords", {"Iter": Iter, "result": "Pass"}),
+            "failCount": utils.count_db("apireplyrecords", {"Iter": Iter, "result": "Fail"}),
+            "exceptionCount": utils.count_db("apireplyrecords", {"Iter": Iter, "result": "Exception"}),
+        }
+    )
+    # generateReport()
 
 
 if __name__ == '__main__':
     # The start time
-    start = time.clock()
+    startTime = time.clock()
     # main program
     main(sys.argv)
     # The End time
-    end = time.clock()
-    print("The function run time is : %.03f seconds" % (end - start))
+    endTime = time.clock()
+    print("The function run time is : %.03f seconds" % (endTime - startTime))
