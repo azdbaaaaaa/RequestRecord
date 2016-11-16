@@ -3,8 +3,15 @@
 import json
 
 
-def function():
-    pass
+def merge_files(outputfile, inputfiles):
+    with open(outputfile, 'w') as fo:
+        for name in inputfiles:
+            with open(name) as fi:
+                while True:
+                    s = fi.read(16 * 1024)
+                    if not s:
+                        break
+                    fo.write(s)
 
 
 def findMaxId(collection_name):
@@ -12,7 +19,10 @@ def findMaxId(collection_name):
         from pymongo import MongoClient
         client = MongoClient()
         db = client.data
-        cursor = db.get_collection(collection_name).find({}, {"Iter": 1, "_id": 0}).sort([("Iter", -1)]).limit(1)
+        cursor = (db.get_collection(collection_name)
+                    .find({}, {"Iter": 1, "_id": 0})
+                    .sort([("Iter", -1)])
+                    .limit(1))
         for x in cursor:
             return x["Iter"]
     except Exception as e:
@@ -79,7 +89,8 @@ def updateOne_db(collection_name, query_data, update_data):
         from pymongo import MongoClient
         client = MongoClient()
         db = client.data
-        result = db.get_collection(collection_name).update_one(query_data, update_data)
+        result = (db.get_collection(collection_name)
+                    .update_one(query_data, update_data))
         if result.modified_count > 0:
             return True
         else:

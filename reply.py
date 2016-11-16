@@ -5,31 +5,65 @@ import json
 import time
 import utils
 import urlparse
-import getopt
 import sys
 import config
 import threading
+import argparse
+
+# 记录需要请求的路径列表，用来去重过滤
+api_list = []
 
 
-def Usage():
-    print 'repeat.py usage:'
-    print '-h, --help: print help message.'
-    print '-v, --version: print script version'
-    print '-i, --inputfile [value]: (required) inputfile recorded by anyproxy.'
-    print '-t, --host [value]: (optional) a list of host separated by | , \
-    which need to be repeat.if null, read config.py \
-    ex: --host "mobile.mmbang.com|www.mmbang.com"'
+def filter_by_duplicated(req):
+    '''过滤出所有非重复的请求
+    '''
+    try:
+        r = json.loads(req)
+        url = r["url"]
+        parsed_url = urlparse.urlparse(url)
+        host = parsed_url.netloc
+        path = parsed_url.path
+        fullurl = host + path
+        params = urlparse.parse_qs(parsed_url.query, True)
+        wl = config.white_list_duplicate
+        for x in wl:
+            if fullurl == x and wl[x] in params:
+                fullurl = fullurl + "?" + wl[x] + "=" + params[wl[x]][0]
+        if fullurl not in api_list:
+            api_list.append(fullurl)
+            return True
+        return False
+    except Exception as e:
+        print(e)
+        return False
 
 
-def Version():
-    print 'repeat.py 0.0.1'
+def filter_by_black_list(req):  # 过滤黑名单中的接口请求
+    try:
+        r = json.loads(req)
+        url = r["url"]
+        parsed_url = urlparse.urlparse(url)
+        host = parsed_url.netloc
+        path = parsed_url.path
+        fullurl = host + path
+        # print fullurl
+        if fullurl in config.black_list:
+            return False
+        return True
+    except Exception as e:
+        print(e)
+        return False
 
 
 def filter_by_mime(req):  # 过滤出所有json格式的请求
     try:
         r = json.loads(req)
-        if "application/json" in r["mime"]:
-            return req
+        if "mime" in r:
+            if "application/json" in r["mime"]:
+                return req
+        elif "resHeader" in r:
+            if "application/json" in r["resHeader"]["content-type"]:
+                return req
     except Exception as e:
         print(e)
         return False
@@ -61,12 +95,8 @@ def filter_by_host_mmbang(req):  # 过滤出请求头中host字段包含mmbang�
 
 def filter_by_host(req):  # 过滤出指定域名的请求，如果没有指定的话读取config文件
     try:
-        if 'filter_host' in globals().keys():  # 判断是否传入全局变量filter_host
-            # 读取传入的filter_host转化为filter_host_list
-            filter_host_list = filter_host.split("|")
-        else:
-            # 读取config.py中的filter_host_list
-            filter_host_list = config.filter_host_list
+        # 判断filter_host_list是否存在，不存在读取config.py
+        filter_host_list = config.filter_host_list
         r = json.loads(req)
         if r["reqHeader"]["host"] in filter_host_list:
             return req
@@ -166,6 +196,17 @@ def do_request(request, Iter, id):
             timeout=30
         )
 
+        # 针对白名单中的接口进行response的url替换
+        parsed_url = urlparse.urlparse(response["url"])
+        host = parsed_url.netloc
+        path = parsed_url.path
+        fullurl = host + path
+        params = urlparse.parse_qs(parsed_url.query, True)
+        wl = config.white_list_duplicate
+        for x in wl:
+            if fullurl == x and wl[x] in params:
+                response["path"] = path + "?" + wl[x] + "=" + params[wl[x]][0]
+
         # 请求之后根据之前的数据id写入请求的数据
         utils.updateOne_db(
             "apireplyrecords",
@@ -180,7 +221,7 @@ def do_request(request, Iter, id):
                 utils.queryOne_db("apireplyrecords", {"_id": id})["requests"]
             )}
         )
-        print("*" * 6 + "%s" + "*" * 6 + "%s" + "*" * 6) % (id, time.ctime())
+        # print("***%s***%s***\n") % (id, time.ctime())
         return True
     except Exception as e:
         print(e)
@@ -192,44 +233,32 @@ def main(argv):
     global start
     start = time.time()
 
-    try:
-        opts, args = getopt.getopt(
-            argv[1:],
-            "hvi:t:",
-            ["help", "version", "inputfile=", "host="]
-        )
-    except getopt.GetoptError:
-        Usage()
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt in ("-h", "--help"):
-            Usage()
-            sys.exit(0)
-        elif opt in ("-v", "--version"):
-            Version()
-            sys.exit(0)
-        elif opt in ("-i", "--inputfile"):
-            inputfile = arg
-        elif opt in ("-t", "--host"):
-            global filter_host
-            filter_host = arg
-        else:
-            Usage()
-            sys.exit(3)
-    if 'inputfile' not in locals().keys():
-        Usage()
-        sys.exit(4)
+    parser = argparse.ArgumentParser(description='reply the API requests.')
+    parser.add_argument('-i', '--input', nargs='+', required=True,
+                        help='list of the inputfiles. (Required)')
+    # parser.add_argument('--host', nargs='+',
+    #                     help='list of the host. (Default read config.py)')
+    args = parser.parse_args()
+    inputfiles = args.input
 
-    with open(inputfile, "r") as file:
+    # 判断文件数量是否为1个，如果多于1个的话，先进行合并文件，生产temp，然后再进行请求
+    if len(inputfiles) > 1:
+        tempfile = str(time.time()).split('.')[0] + "_temp.log"
+        utils.merge_files(tempfile, inputfiles)
+    else:
+        tempfile = inputfiles[0]
+    with open(tempfile, "r") as file:
         lines = file.readlines()
         # lines = lines[0]
         # lines = filter(filter_by_host_mmbang, lines)
-        lines = filter(filter_by_host, lines)
-        lines = filter(filter_by_static_file, lines)
-        lines = filter(filter_by_method, lines)
-        lines = filter(filter_by_duration, lines)
-        lines = filter(filter_by_mime, lines)
-
+        lines = filter(filter_by_host, lines)  # 过滤出指定域名的请求，如果没有指定的话读取config文件
+        lines = filter(filter_by_static_file, lines)  # 过滤出所有非静态文件的请求
+        lines = filter(filter_by_method, lines)  # 过滤出所有GET与POST请求
+        lines = filter(filter_by_duration, lines)  # 过滤出所有有返回时间的请求
+        lines = filter(filter_by_mime, lines)  # 过滤出所有MIME类型是json的请求
+        lines = filter(filter_by_black_list, lines)  # 过滤出所有不是黑名单中接口地址的请求
+        lines = filter(filter_by_duplicated, lines)  # 过滤出所有非重复的请求
+        # sys.exit(1)
         # 获取当前是第几次测试
         currentIter = utils.findMaxId("apireplysummarys")
         if not currentIter:
@@ -239,7 +268,10 @@ def main(argv):
         # 多线程处理请求
         threads = []
         for x in xrange(0, len(lines)):
-            t = threading.Thread(target=do_request, args=(lines[x], Iter, x + 1,))
+            t = threading.Thread(
+                target=do_request,
+                args=(lines[x], Iter, x + 1,)
+            )
             threads.append(t)
         for t in threads:
             t.setDaemon(True)
@@ -261,9 +293,15 @@ def main(argv):
             "start": start,
             "end": end,
             "totalCount": utils.count_db("apireplyrecords", {"Iter": Iter}),
-            "passCount": utils.count_db("apireplyrecords", {"Iter": Iter, "result": "Pass"}),
-            "failCount": utils.count_db("apireplyrecords", {"Iter": Iter, "result": "Fail"}),
-            "exceptionCount": utils.count_db("apireplyrecords", {"Iter": Iter, "result": "Exception"}),
+            "passCount": utils.count_db("apireplyrecords", {
+                "Iter": Iter,
+                "result": "Pass"}),
+            "failCount": utils.count_db("apireplyrecords", {
+                "Iter": Iter,
+                "result": "Fail"}),
+            "exceptionCount": utils.count_db("apireplyrecords", {
+                "Iter": Iter,
+                "result": "Exception"}),
         }
     )
     # generateReport()
